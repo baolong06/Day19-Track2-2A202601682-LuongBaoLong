@@ -1,0 +1,15 @@
+Day 19 Lab submission - LuongBaoLong - All 8 notebooks complete
+
+Core notebooks (NB1-NB4): 100 pts
+- NB1: Embeddings & Vector Indexing - PASS
+- NB2: Hybrid Search BM25 + Vector + RRF - PASS  
+- NB3: FastAPI Benchmark - PASS
+- NB4: Feast Feature Store - PASS
+
+Advanced notebooks (NB5-NB8): 50 pts
+- NB5: Filtered Search - PASS
+- NB6: Agentic Retrieval - PASS
+- NB7: Semantic Cache - PASS
+- NB8: Feature Engineering - PASS
+
+All 41 tests passed.
