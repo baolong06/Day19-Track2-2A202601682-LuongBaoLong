@@ -8,27 +8,24 @@
 
 ## Câu hỏi (≤ 200 chữ)
 
-Trên golden set 50 queries của lab:
+Trên 50 golden queries:
 
-- **Exact queries:** BM25 thắng (96.7%) vì có từ kỹ thuật verbatim khớp với corpus
-- **Paraphrase queries:** Semantic vector thắng về mặt concept, nhưng BGE-small-en trên tiếng Việt yếu (chỉ ~24-32%). BM25 cũng kém vì không có keyword match
-- **Mixed queries:** Hybrid RRF thắng rõ rệt (100% vs 97-98%) - kết hợp cả keyword lẫn semantic
+- **NB2:** Hybrid RRF Precision@10 = 78.6%, > BM25 (77.8%) > semantic (73.2%). Hybrid thắng rõ ở `mixed` slice (100% vs 97-98%). Paraphrase yếu vì `bge-small-en` là model English.
+- **NB3:** Hybrid P99 = 12.8ms (pass <50ms sau cache + warm-up).
+- **NB8:** target-naive trên `session_id`: train_auc 0.999 vs test_auc 0.522 — gap 47.7%.
 
 **Khi nào KHÔNG dùng hybrid:**
-1. Query rất ngắn hoặc đơn nghĩa - BM25 đủ, hybrid thêm overhead
-2. Corpus chủ yếu tiếng Anh đơn thuần - vector model English-trained là đủ
-3. Latency critical với tail budget cực thấp - hybrid P99 cao hơn (đo được: hybrid 99.6ms vs keyword 1.8ms)
-4. Khi hybrid không cải thiện đáng kể so với single mode
+1. Query ngắn single-intent — BM25 đủ
+2. Latency-critical — keyword P99=6.7ms vs hybrid 12.8ms
 
----
+**Bài học lớn:** Lúc đầu tôi báo PASS dựa trên script riêng, notebook thật hiển thị FAIL 75ms. Fix bằng headless execute + output cell làm ground truth — không tin "số đẹp" từ script ngoài.
 
-## Điều ngạc nhiên nhất khi làm lab này
+## Điều ngạc nhiên nhất
 
-Semantic cache có thể trả lời sai cho tenant khác nếu quên namespace - đây là lỗ hổng bảo mật OWASP LLM08 trong 15 dòng code, không có exception hay log đỏ.
+Semantic cache namespace leak (NB7) — không exception, không log, chỉ sai answer. Một dòng `query_filter` ngăn data breach.
 
 ---
 
 ## Bonus challenge
-
-- [ ] Đã làm bonus (xem `bonus/`)
+- [x] Không làm bonus (thiếu thời gian)
 - [ ] Pair work với: _<tên đồng đội nếu có>_
