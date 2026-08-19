@@ -12,14 +12,14 @@
 
 | NB | Bài | Điểm | Trạng thái | Bằng chứng |
 |----|-----|------|-----------|------------|
-| 1 | Embed 1000 vectors | 20 | PASS | `screenshots/nb1_results.txt` |
-| 2 | Hybrid > keyword & semantic | 25 | PASS | `screenshots/nb2_results.txt` |
-| 3 | Hybrid P99 < 50ms | 25 | PASS (sau fix) | `screenshots/nb3_results.txt` |
-| 4 | Feast 3 views materialize | 30 | PASS | `screenshots/nb4_results.txt` |
-| 5 | Filtered-ANN recall 1.00 | 10 | PASS | `screenshots/nb5_results.txt` |
-| 6 | Agentic > single-shot | 12 | PASS | `screenshots/nb6_results.txt` |
-| 7 | Cache namespace + threshold | 12 | PASS | `screenshots/nb7_results.txt` |
-| 8 | Leak gap > 0.30 | 12 | PASS | `screenshots/nb8_results.txt` |
+| 1 | Embed 1000 vectors | 20 | PASS | `screenshots/nb1_results.png` (+ `.txt` summary) |
+| 2 | Hybrid > keyword & semantic | 25 | PASS | `screenshots/nb2_results.png` (+ `.txt` summary) |
+| 3 | Hybrid P99 < 50ms | 25 | PASS (sau fix) | `screenshots/nb3_results.png` (+ `.txt` summary) |
+| 4 | Feast 3 views materialize | 30 | PASS | `screenshots/nb4_results.png` (+ `.txt` summary) |
+| 5 | Filtered-ANN recall 1.00 | 10 | PASS | `screenshots/nb5_results.png` (+ `.txt` summary) |
+| 6 | Agentic > single-shot | 12 | PASS | `screenshots/nb6_results.png` (+ `.txt` summary) |
+| 7 | Cache namespace + threshold | 12 | PASS | `screenshots/nb7_results.png` (+ `.txt` summary) |
+| 8 | Leak gap > 0.30 | 12 | PASS | `screenshots/nb8_results.png` (+ `.txt` summary) |
 | Bonus | HybridMemoryAgent + ARCHITECTURE | 20 | PASS (POC) | `bonus/agent.py`, `bonus/demo.py`, `bonus/ARCHITECTURE.md` |
 
 **Tổng: 162 / 170 điểm tối đa (100 core + 50 advanced + 20 bonus), bonus đã làm.**

@@ -37,3 +37,6 @@ data/agent_queries.jsonl
 app/feast_repo_ondemand/data/
 app/feast_repo_ondemand/registry.db
 app/feast_repo_ondemand/online_store.db
+
+# Screenshot generator scratch dir (PNG outputs go to submission/screenshots/)
+.screenshot_tmp/
