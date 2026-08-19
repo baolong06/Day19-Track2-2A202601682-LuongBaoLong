@@ -22,7 +22,7 @@
 | 8 | Leak gap > 0.30 | 12 | PASS | `screenshots/nb8_results.txt` |
 | Bonus | HybridMemoryAgent + ARCHITECTURE | 20 | PASS (POC) | `bonus/agent.py`, `bonus/demo.py`, `bonus/ARCHITECTURE.md` |
 
-**Tổng: 146 / 170 điểm tối đa (100 core + 50 advanced + 20 bonus), bonus đã làm.**
+**Tổng: 162 / 170 điểm tối đa (100 core + 50 advanced + 20 bonus), bonus đã làm.**
 
 ---
 
