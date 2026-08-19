@@ -27,5 +27,5 @@ Semantic cache namespace leak (NB7) — không exception, không log, chỉ sai 
 ---
 
 ## Bonus challenge
-- [x] Không làm bonus (thiếu thời gian)
-- [ ] Pair work với: _<tên đồng đội nếu có>_
+- [x] Đã làm bonus (xem `bonus/`)
+- [ ] Pair work với: _(chưa tìm được pair)_
