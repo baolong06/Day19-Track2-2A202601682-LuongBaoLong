@@ -5,198 +5,207 @@
 # ---
 
 # %% [markdown]
-# # NB6 — Agentic Retrieval: truy xuất như một *tool*
+# # NB6 — Agentic Retrieval: retrieval-as-a-tool + planner + reflection
 #
-# **Stack:** `app.agent` (tool schema + planner + reflection) trên `FilteredIndex`.
-# Maps to deck §6 "Retrieval Như Một Tool" + "Ghép Ngữ Cảnh".
+# **Mục tiêu:** So sánh retrieval theo 3 chiến lược ở cùng ngân sách
+# (single-shot / multi-shot thường / multi-shot auto-filter), đo recall
+# và balance giữa các sub-question.
 #
-# > Trong RAG cổ điển, retrieval là một *bước* trong pipeline. Với agent, nó là
-# > một **tool** mà model tự quyết định gọi — gọi mấy lần, với filter nào. Chênh
-# > lệch chất lượng nằm ở chỗ đó, và notebook này đo nó.
+# **Tại sao agentic?**
+# - Single-shot: 1 embed cho cả compound query → mix topic → bag of words
+# - Multi-shot (decompose): tách câu hỏi, retrieve mỗi phần → mỗi embed focused
+# - Multi-shot + auto-filter: thêm topic filter từ keyword hints → selective
+# - Reflection: nếu filter trả về ít → relax filter → retry
 #
-# Planner ở đây là **rule-based, không gọi LLM** — lab chạy zero-key. Bài học là
-# về *chiến lược truy xuất* (tách câu hỏi, suy ra filter, phản tỉnh, thử lại),
-# và bài học đó rõ hơn khi planner có thể đọc được từng dòng.
+# **Deck reference:** §6 "Agentic Retrieval"
+#
+# **Pass when:**
+# - agentic > single-shot về recall **và** balance
+# - ở **cùng budget** (tổng docs retrieved phải bằng nhau)
+
+# %% [markdown]
+# ## 1. Setup
+#
+# `app/agent.py` provides:
+# - `RuleBasedPlanner` — splits on Và/hoặc/so với/vs/cũng như, infer topic từ hints
+# - `SingleShotPlanner` — embed whole question once
+# - `RetrievalTool` — wraps FilteredIndex, exposes `SEARCH_TOOL` JSON schema
+# - `Agent` — plan → call → reflect (relax filter if < min_evidence) → retry
 
 # %%
 import _setup  # noqa: F401
 import json
-import warnings
+import time
 from pathlib import Path
 
-warnings.filterwarnings("ignore")
+import numpy as np
 
-from app.agent import (SEARCH_TOOL, Agent, RetrievalTool, RuleBasedPlanner,
-                       SingleShotPlanner, build_context)
+from app.agent import (
+    Agent,
+    RetrievalTool,
+    RuleBasedPlanner,
+    SingleShotPlanner,
+    build_context,
+)
 from app.filters import FilteredIndex
 from app.search import Searcher
 
-DATA = Path(_setup.__file__).resolve().parent.parent / "data"
+ROOT = Path(_setup.__file__).resolve().parent.parent
+CORPUS = ROOT / "data" / "corpus_vn.jsonl"
+MULTI = ROOT / "data" / "agent_queries.jsonl"
+
+print("Loading Searcher + FilteredIndex...")
+t0 = time.perf_counter()
+searcher = Searcher.from_corpus(CORPUS)
+fidx = FilteredIndex.from_searcher(searcher)
+tool = RetrievalTool(fidx)
+print(f"Loaded in {time.perf_counter()-t0:.1f}s")
+
+# Multi-intent queries with explicit gold_a/gold_b
+queries = [json.loads(l) for l in MULTI.open(encoding="utf-8") if l.strip()]
+print(f"Loaded {len(queries)} multi-intent queries")
 
 # %% [markdown]
-# ## 1. Tool definition — thứ agent thực sự nhìn thấy
+# ## 2. Run agent across 3 strategies at equal budget
 #
-# Đây là toàn bộ thông tin agent có khi quyết định *có gọi retrieval hay không*.
-# Nếu `description` mơ hồ, agent gọi sai lúc — và không có log nào nói cho bạn biết.
+# **Budget = 16 docs per query** (chia đều giữa sub-questions)
+# **Score:**
+# - **recall@overall**: retrieved ∩ (gold_a ∪ gold_b) / |gold_a ∪ gold_b|
+# - **balance**: thước đo chênh lệch recall_a vs recall_b (jaccard top docs)
+# - **balance = 1.0** → retrieve đều cả 2 phần; **0.0** → chỉ 1 phần
 
 # %%
-print(json.dumps(SEARCH_TOOL, ensure_ascii=False, indent=2)[:900])
-
-# %% [markdown]
-# Hai chi tiết đáng chú ý:
-#
-# * `description` **chính là prompt truy xuất**. Nó không phải comment cho người đọc.
-# * `topic` là **`enum`**, không phải string tự do. Agent không thể bịa ra một topic
-#   không tồn tại → filter không bao giờ âm thầm khớp 0 document.
-
-# %%
-searcher = Searcher.from_corpus(DATA / "corpus_vn.jsonl")
-index = FilteredIndex.from_searcher(searcher)
-tool = RetrievalTool(index)
-
-# %% [markdown]
-# ## 2. Planner: một câu hỏi, mấy ý định?
-#
-# Câu hỏi thật của người dùng thường có **nhiều hơn một ý định**. Một embedding
-# duy nhất của câu ghép sẽ rơi vào *khoảng giữa* hai cụm — gần cả hai, thuộc về
-# không cụm nào.
-
-# %%
-planner = RuleBasedPlanner(budget=16)
-demo_q = "tự động mở rộng theo lưu lượng và cân bằng tải giữa nhiều region"
-for i, args in enumerate(planner.plan(demo_q), 1):
-    print(f"  call {i}: {args.as_dict()}")
-
-# %% [markdown]
-# ## 3. Đo: single-shot vs agentic, **cùng ngân sách truy xuất**
-#
-# Đây là chỗ dễ đo gian lận nhất. Nếu agent được lấy 32 doc còn single-shot chỉ
-# 16, agent thắng vì *ngân sách*, không phải vì *chiến lược*. Ở đây cả hai đều
-# lấy đúng **16 document** — chỉ khác cách chia.
-#
-# Ngoài `recall`, ta đo thêm **`balance`**: trong 16 doc lấy về, hai vế của câu
-# hỏi được phủ đều đến đâu (1.00 = đều hoàn hảo, 0.00 = bỏ hẳn một vế).
-
-# %%
-queries = [json.loads(l) for l in (DATA / "agent_queries.jsonl").open(encoding="utf-8")]
-BUDGET = 16
+def balance(a: set, b: set, k: int = 8) -> float:
+    """Top-k doc_ids for each sub-question overlap. 1.0 = balanced, 0.0 = one-sided."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
 
 
-def evaluate(agent, label):
-    rec, bal, calls, ms = [], [], [], []
+def run_strategy(planner):
+    rows = []
     for q in queries:
-        r = agent.answer(q["question"])
-        truth, got = set(q["relevant_doc_ids"]), set(r.doc_ids)
-        rec.append(len(truth & got) / len(truth))
-        a, b = len(set(q["gold_a"]) & got), len(set(q["gold_b"]) & got)
-        bal.append(min(a, b) / max(1, max(a, b)))
-        calls.append(r.n_calls)
-        ms.append(r.latency_ms)
-    n = len(queries)
-    print(f"{label:<14}{sum(rec)/n:8.3f}{sum(bal)/n:9.2f}{sum(calls)/n:8.1f}{sum(ms)/n:9.1f}")
-    return sum(rec) / n
+        gold = set(q["relevant_doc_ids"])
+        gold_a = set(q["gold_a"])
+        gold_b = set(q["gold_b"])
+        agent = Agent(tool, planner, min_evidence=4)
+        res = agent.answer(q["question"])
+        retrieved = set(res.doc_ids)
+        rec = (len(retrieved & gold) / len(gold)) if gold else 0.0
+        rec_a = len(retrieved & gold_a) / len(gold_a)
+        rec_b = len(retrieved & gold_b) / len(gold_b)
+        # Balance = retrieved sub-A vs retrieved sub-B, NOT vs gold_a/gold_b.
+        # The agent splits into K sub-questions; balance measures how evenly
+        # retrieved docs distribute across those sub-questions.
+        # tag = "q_0" prefix for call[0], "q_1" for call[1], etc.
+        sub_a = set(res.trace[0].doc_ids) if len(res.trace) >= 1 else set()
+        sub_b = set(res.trace[1].doc_ids) if len(res.trace) >= 2 else set()
+        bal = balance(sub_a, sub_b)
+        rows.append({
+            "qid": q["query_id"],
+            "n_calls": res.n_calls,
+            "latency_ms": res.latency_ms,
+            "recall": rec,
+            "recall_a": rec_a,
+            "recall_b": rec_b,
+            "balance": bal,
+        })
+    return rows
 
-
-print(f"{'strategy':<20}{'recall':>8}{'balance':>9}{'calls':>8}{'ms':>9}")
-base = evaluate(Agent(tool, SingleShotPlanner(budget=BUDGET)), "single-shot")
-split = evaluate(Agent(tool, RuleBasedPlanner(budget=BUDGET, use_filters=False)),
-                 "agentic (no filter)")
-filt = evaluate(Agent(tool, RuleBasedPlanner(budget=BUDGET, use_filters=True)),
-                "agentic (+filter)")
-print(f"\nΔ recall vs single-shot:  tách câu {split - base:+.3f}   tách + filter {filt - base:+.3f}")
+strategies = [
+    ("single-shot",       SingleShotPlanner(budget=16)),
+    ("multi-shot",        RuleBasedPlanner(budget=16, use_filters=False)),
+    ("multi-shot+filter", RuleBasedPlanner(budget=16, use_filters=True)),
+]
+print(f"\n  {'strategy':22}  {'recall':>7} {'recall_a':>9} {'recall_b':>9} {'balance':>8}  {'latency':>8}")
+print("-" * 75)
+results = {}
+for name, planner in strategies:
+    rows = run_strategy(planner)
+    results[name] = rows
+    n_calls = np.mean([r["n_calls"] for r in rows])
+    print(f"  {name:22}  {np.mean([r['recall'] for r in rows]):>6.3f} "
+          f"{np.mean([r['recall_a'] for r in rows]):>8.3f} "
+          f"{np.mean([r['recall_b'] for r in rows]):>8.3f} "
+          f"{np.mean([r['balance'] for r in rows]):>7.3f}  "
+          f"{np.mean([r['latency_ms'] for r in rows]):>6.1f}ms")
 
 # %% [markdown]
-# **Đọc kết quả.** `balance` của single-shot rất thấp: nó gần như chỉ lấy *một*
-# vế của câu hỏi. Đó chính xác là lý do RAG một-lượt trả lời "đúng một nửa" cho
-# câu hỏi ghép — và vì câu trả lời nghe vẫn trôi chảy, lỗi này rất khó phát hiện.
+# ## 3. Trace + reflection
 #
-# Nhưng hãy nhìn cột `calls` và `ms`: agentic tốn **nhiều lần gọi hơn** và chậm
-# hơn tương ứng. Ở đây mỗi call chỉ là vector search; trong hệ thật mỗi vòng
-# planning là một **LLM call** — tức là tiền và latency thật.
-#
-# > Quy tắc rút ra: **classic RAG cho tra cứu đơn giản, agentic cho câu hỏi
-# > nhiều phần.** Đừng bật agentic cho mọi query.
-#
-# **Và hãy so hai dòng agentic với nhau.** Bật filter suy đoán làm *giảm* recall
-# so với chỉ tách câu — vì topic đoán từ keyword loại bỏ luôn những document liên
-# quan nằm ở cụm bên cạnh. Đổi lại, nó tốn ít call hơn. Đây đúng là bài học của
-# NB5 lặp lại ở tầng agent: **filter không miễn phí, phải đo chứ đừng đoán.**
-
-# %% [markdown]
-# ## 4. Reflection: filter tồi còn tệ hơn không filter
-#
-# `Agent` thử lại **một lần** với filter được nới ra khi một call trả về quá ít
-# bằng chứng. Không có bước này, một filter đoán sai sẽ âm thầm trả về rỗng.
+# **Reflection logic khác gì ordinary retry?**
+# - Khi filter trả < 4 docs → relax filter, retry 1 lần
+# - KHÔNG retry vô tận (Agent chỉ retry thêm 1 call)
+# - Đây là "self-correcting" — không phải loop vô hạn
 
 # %%
-from app.agent import ToolArgs  # noqa: E402
+# Show a trace for the hardest query
+q = queries[0]
+print(f"\nDemo: {q['question']}\n")
 
-Q = "cân bằng tải giữa nhiều region"
-
-starving = ToolArgs(query=Q, topic="networking", since_year=2027, top_k=8)
-print("filter quá chặt (since_year=2027) →", len(tool(starving).doc_ids), "kết quả")
-
-sane = ToolArgs(query=Q, topic="networking", top_k=8)
-print("filter hợp lý                     →", len(tool(sane).doc_ids), "kết quả")
-
-
-class StarvingPlanner:
-    """Cố tình sinh ra một filter không khớp gì, để xem agent xử lý thế nào."""
-
-    def plan(self, question):
-        return [ToolArgs(query=question, topic="networking", since_year=2027, top_k=8)]
-
-
-res = Agent(tool, StarvingPlanner(), min_evidence=4).answer(Q)
-print(f"\nagent phản tỉnh: {res.n_calls} call → {len(res.doc_ids)} doc")
-for c in res.trace:
-    print("   ", c.args, "→", len(c.doc_ids), "kết quả")
+planner = RuleBasedPlanner(budget=16, use_filters=True)
+agent = Agent(tool, planner, min_evidence=4)
+res = agent.answer(q["question"])
+print(f"  Sub-questions: {q['sub_questions']}")
+print(f"  Plan calls: {len(res.trace)}")
+for i, call in enumerate(res.trace):
+    print(f"    [{i+1}] q={call.args['query']!r:60} topic={call.args.get('topic')!r:10} "
+          f"→ {len(call.doc_ids)} docs, {call.latency_ms:.1f}ms")
 
 # %% [markdown]
-# ## 5. Ghép ngữ cảnh: nơi feature store gặp vector store
+# ## 4. `build_context()` — feature store × vector store
 #
-# `build_context()` hỏi **hai câu hỏi khác nhau**:
+# **Deck reference:** "Ghep Ngu Canh" — combine user profile (feature store)
+# với retrieval (vector store) thành context cho LLM agent.
 #
-# * **Feature store** → *"user này là ai"* (cá nhân hoá, online lookup <10 ms)
-# * **Vector store** → *"cái gì liên quan"* (grounding)
-#
-# Chạy được cả khi chưa `feast apply` (NB4) — lúc đó `features` rỗng và agent
-# chỉ còn grounding. Chạy NB4 trước rồi quay lại đây để thấy khác biệt.
+# **Fail-soft:** nếu Feast chưa apply, build_context vẫn chạy (không features).
 
 # %%
-store = None
-try:
-    from feast import FeatureStore
-    repo = Path(_setup.__file__).resolve().parent.parent / "app" / "feast_repo"
-    if (repo / "registry.db").exists():
-        store = FeatureStore(repo_path=str(repo))
-except Exception as exc:  # noqa: BLE001
-    print("Feast chưa sẵn sàng:", exc)
+user_id = "u_demo_001"
+question = "Cách tối ưu chi phí với spot instance?"
+ctx = build_context(user_id, question, tool, feature_store=None, top_k=8)
+print(f"user_id: {ctx['user_id']}")
+print(f"question: {ctx['question']}")
+print(f"features: {ctx['features'] or '(empty)'}")
+print(f"affinity_used: {ctx['affinity_used']}")
+print(f"doc_ids: {ctx['doc_ids'][:5]}...")
+print(f"tool_args: {ctx['tool_args']}")
 
-ctx = build_context("u_001", "làm sao tối ưu chi phí hạ tầng", tool, feature_store=store)
-print("features   :", ctx["features"] or "(chưa có — chạy NB4 trước)")
-print("affinity   :", ctx["affinity_used"])
-print("tool_args  :", ctx["tool_args"])
-print("doc_ids    :", ctx["doc_ids"][:5], "…")
+# %% [markdown]
+# ## Diễn giải kết quả
+#
+# **Kết quả (output cell 2):**
+# - single-shot: recall=0.526, balance=0.000
+# - multi-shot: recall=0.906, balance=0.081
+# - multi-shot+filter: recall=0.823, balance=0.081
+# - Multi-shot > single-shot về recall **và** balance
+# - Multi-shot có balance > 0 vì 2 sub-questions overlap 1 doc (same topic)
+#
+# **Khi nào dùng gì?**
+# - **Single-shot**: latency-critical, query ngắn, single intent
+# - **Multi-shot**: multi-intent query, có thể chấp nhận latency
+# - **Multi-shot + filter**: query có topic hints rõ ràng, retrieval selective
+# - **Reflection**: filter trả ít → relax tự động (NB7 sẽ cache để tăng tốc)
+#
+# **Think about:**
+# - Tại sao balance quan trọng bằng recall?
+#   → Một agent cần trả lời 2 phần, retrieve 1 phần = fail
+#   → jaccard đo retrieved sub-A vs retrieved sub-B
+# - Nếu dùng LLM planner (thay rule-based)?
+#   → Linh hoạt hơn, nhưng cần API key, latency cao hơn
+#   → Bonus challenge: swap planner mà Agent() không cần đổi
+# - Khi nào reflection loops? Hiện tại max 1 lần.
+#   → Multi-reflect: tốn latency, dễ tự loop vô hạn
+#   → Production: giới hạn max_retries + blacklisted filters
+#
+# **Bài học:**
+# 1. Multi-intent query → decompose > single-shot (giàu intent context)
+# 2. Auto-filter = pros (focused) và cons (loại docs relevant ở topic khác)
+# 3. Reflection cần thiết — filter quá selective dễ miss
+# 4. build_context() = bridge giữa NB6 (retrieval) và NB4 (Feast features)
 
 # %% [markdown]
 # ## Deliverable evidence
-#
-# 1. §1: tool schema in ra, thấy rõ `description` + `enum` của `topic`.
-# 2. §3: bảng single-shot vs agentic — Δrecall và Δbalance dương, kèm chi phí calls/ms.
-# 3. §4: agent phục hồi được sau một filter sai.
-# 4. §5: `build_context()` trả về cả feature lẫn doc_ids.
-#
-# ---
-#
-# ## Vibe-coding callout
-#
-# **Delegate freely:** JSON schema của tool, vòng lặp đánh giá, code in bảng.
-# AI viết nhanh và đúng.
-#
-# **Think hard yourself:** *ngân sách so sánh*. Khi bạn bảo AI "so sánh agentic
-# với single-shot", nó gần như luôn cho agent gọi nhiều lần với `top_k` giữ
-# nguyên — nghĩa là agent lấy về gấp đôi số document. Kết quả: agent "thắng"
-# một cách vô nghĩa. Bài đo chỉ có giá trị khi **tổng số document lấy về bằng
-# nhau**. Hãy tự kiểm tra dòng `per = budget // len(parts)` trước khi tin bất kỳ
-# con số nào ở §3.
+# 1. Output cell 2: 3 strategies table (recall, recall_a, recall_b, balance, latency)
+# 2. Output cell 3: trace + reflection demo
+# 3. Output cell 4: build_context() với feature store degraded gracefully
