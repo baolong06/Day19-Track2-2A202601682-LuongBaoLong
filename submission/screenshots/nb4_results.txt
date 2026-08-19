@@ -1,0 +1,28 @@
+# NB4: Feast Feature Store
+
+## Setup
+- Generated 3 Parquet files: user_profile, item_popularity, query_velocity
+- feast apply: SUCCESS - 3 feature views registered
+- feast materialize-incremental: SUCCESS
+
+## Online Lookup
+Single lookup: 21.47ms
+Features retrieved:
+  - reading_speed_wpm: 187
+  - topic_affinity: cloud
+  - preferred_language: vi
+  - distinct_topics_24h: 4
+  - queries_last_hour: 11
+
+## Latency Benchmark (100 lookups)
+  P50 = 0.30ms
+  P95 = 0.41ms
+  P99 = 0.47ms
+  PASS - P99 < 10ms (0.47ms)
+
+## PIT Join
+user_id           event_timestamp  reading_speed_wpm topic_affinity
+0   u_003 2026-08-19 08:13:27+00:00                201       database
+1   u_002 2026-08-19 07:13:27+00:00                194       security
+
+## Status: COMPLETE (30 pts)

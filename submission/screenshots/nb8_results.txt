@@ -1,0 +1,32 @@
+# NB8: Feature Engineering
+
+## Target Encoding Leakage
+-- session_id (high cardinality, ~1 event/group) --
+      encoding  train_auc  test_auc    gap
+     frequency      0.521     0.516  0.005
+  target-naive      0.999     0.522  0.477  <-- 47.7% leakage gap!
+target-in-fold      0.519     0.522 -0.003
+
+-- user_id (lower cardinality, ~45 events/group) --
+      encoding  train_auc  test_auc    gap
+     frequency      0.726     0.708  0.018
+  target-naive      0.749     0.698  0.052
+target-in-fold      0.714     0.698  0.016
+
+## Key Finding
+target-naive on session_id shows 47.7% gap (>30% threshold) - clear leakage detected!
+
+## PIT Join vs Latest Join
+training rows: 3535
+leaked rows: 98.2%
+
+AUC with latest-value join: 0.715 (using future data)
+AUC with point-in-time join: 0.595 (correct)
+'Virtual lift' lost in production: +0.120 AUC
+
+## On-Demand Feature View
+user=u_000  avg7d=3,566,076  ratio=0.03  spike=0
+user=u_000  avg7d=3,566,076  ratio=4.21  spike=1  <-- Same user, different amount!
+user=u_001  avg7d=3,718,992  ratio=0.07  spike=0
+
+## Status: COMPLETE (12 pts advanced)

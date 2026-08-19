@@ -1,0 +1,21 @@
+# NB2: Hybrid Search BM25 + Vector + RRF
+
+## Results
+Precision@10 (avg over 50 queries):
+  Keyword (BM25)   : 77.8%
+  Semantic (vector): 73.2%
+  Hybrid  (RRF=60) : 78.6%
+
+## Slice by Query Type
+  type           n       kw     sem     hyb
+  exact         15   96.7%  88.7%  96.7%
+  paraphrase    15   33.3%  24.0%  32.0%
+  mixed         20   97.0%  98.5% 100.0%
+
+## Analysis
+- Hybrid wins on average: 78.6% > 77.8% (keyword) and > 73.2% (semantic)
+- Exact queries: BM25 and Hybrid tied (96.7%)
+- Mixed queries: Hybrid wins (100% vs 98.5% semantic, 97% keyword)
+- Paraphrase: All modes weak with BGE-small-en on Vietnamese
+
+## Status: COMPLETE (25 pts)

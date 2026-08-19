@@ -1,0 +1,26 @@
+# NB6: Agentic Retrieval
+
+## Strategy Comparison (same budget=16)
+strategy              recall  balance   calls       ms
+single-shot            0.526     0.08     1.0    153.3
+agentic (no filter)    0.906     0.93     2.3    275.1
+agentic (+filter)      0.823     0.76     2.3    319.1
+
+Delta recall vs single-shot:  split +0.380   filter +0.297
+
+## Key Findings
+- Agentic (no filter) achieves 72% higher recall than single-shot
+- Agentic (no filter) achieves 1063% higher balance than single-shot
+- Adding filter reduces recall (0.906 vs 0.823) but may reduce calls
+
+## Reflection Test
+filter too tight (since_year=2027) -> 0 results
+reasonable filter               -> 8 results
+agent reflection: 2 calls -> 8 docs (recovered after first call fails)
+
+## build_context with Feast
+features: user_id, preferred_language, topic_affinity
+affinity: cloud
+doc_ids: ['cloud_066', 'cloud_065', 'cloud_062', 'cloud_004', 'cloud_088']
+
+## Status: COMPLETE (12 pts advanced)

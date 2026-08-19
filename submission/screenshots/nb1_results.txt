@@ -1,0 +1,21 @@
+# NB1: Embeddings & Vector Indexing
+
+## Results
+- Corpus size: 1000 docs
+- Vector dimension: 384 (BAAI/bge-small-en-v1.5)
+- Indexed: 1000 vectors
+
+## Query Test
+Query: "cloud computing và tự động mở rộng"
+Top-5:
+  1. [cloud] score=0.804  Điện toán đám mây: tự động mở rộng theo lưu lượng
+  2. [cloud] score=0.787  Điện toán đám mây: tự động mở rộng theo lưu lượng
+  3. [cloud] score=0.775  Điện toán đám mây: tự động mở rộng theo lưu lượng
+  4. [cloud] score=0.774  Điện toán đám mây: tự động mở rộng theo lưu lượng
+  5. [data_eng] score=0.763  Data engineering: phân vùng theo ngày để tối ưu query
+
+## Paraphrase Query
+Query (no "cloud" keyword): "phương pháp tự động mở rộng hạ tầng theo lưu lượng người dùng"
+All 5/5 top results are 'cloud' topic - PASS
+
+## Status: COMPLETE (20 pts)

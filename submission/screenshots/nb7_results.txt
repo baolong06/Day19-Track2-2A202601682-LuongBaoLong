@@ -1,0 +1,29 @@
+# NB7: Semantic Cache
+
+## Threshold Sweep
+cache: 25 queries   probes: 75 positive / 75 negative
+
+threshold       saved         wrong   note      
+    0.60        100%           97%   DANGEROUS 
+    0.70        100%           60%   DANGEROUS 
+    0.75        100%           36%   DANGEROUS 
+    0.80        100%            5%   balanced  
+    0.85        100%            0%   balanced  
+    0.90         96%            0%   balanced  
+    0.95         53%            0%   too tight 
+
+## Key Finding
+0.75 (AWS recommended) is NOT safe for this corpus - 36% wrong answers!
+Need threshold ~0.85+ for safe operation.
+
+## TTL Test
+t =      0s  -> HIT
+t =    600s  -> HIT
+t =   4200s  -> MISS (expired after TTL=1800s)
+stale evictions: 1
+
+## Tenant Leak Test
+namespaced=False -> GLOBEX receives ACME's answer (LEAK!)
+namespaced=True  -> GLOBEX receives MISS (correct)
+
+## Status: COMPLETE (12 pts advanced)
